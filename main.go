@@ -17,28 +17,28 @@ import (
 )
 
 type JSONRPCRequest struct {
-	JSONRPC string      `json:"jsonrpc"`
-	ID      int         `json:"id"`
-	Method  string      `json:"method"`
-	Params  any `json:"params,omitempty"`
+	JSONRPC string `json:"jsonrpc"`
+	ID      *int   `json:"id,omitempty"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
 }
 
 type JSONRPCError struct {
-	Code    int         `json:"code"`
-	Message string      `json:"message"`
-	Data    any `json:"data,omitempty"`
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    any    `json:"data,omitempty"`
 }
 
 type JSONRPCResponse struct {
 	JSONRPC string        `json:"jsonrpc"`
 	ID      int           `json:"id,omitempty"`
-	Result  any   `json:"result,omitempty"`
+	Result  any           `json:"result,omitempty"`
 	Error   *JSONRPCError `json:"error,omitempty"`
 }
 
 type InitializeParams struct {
-	ProcessID    int                    `json:"processId"`
-	RootURI      string                 `json:"rootUri"`
+	ProcessID    int            `json:"processId"`
+	RootURI      string         `json:"rootUri"`
 	Capabilities map[string]any `json:"capabilities"`
 }
 
@@ -83,15 +83,16 @@ func NewLSPClient(ctx context.Context, command string, args []string, logger *sl
 }
 
 func (c *LSPClient) SendRequest(ctx context.Context, method string, params any) (*JSONRPCResponse, error) {
+	id := c.id
+	c.id++
 	request := JSONRPCRequest{
 		JSONRPC: "2.0",
-		ID:      c.id,
+		ID:      &id,
 		Method:  method,
 		Params:  params,
 	}
-	c.id++
 
-	c.logger.Debug("Sending LSP request", "method", method, "id", request.ID)
+	c.logger.Debug("Sending LSP request", "method", method, "id", *request.ID)
 
 	requestBytes, err := json.Marshal(request)
 	if err != nil {
@@ -105,12 +106,34 @@ func (c *LSPClient) SendRequest(ctx context.Context, method string, params any) 
 		return nil, fmt.Errorf("failed to write request: %w", err)
 	}
 
-	return c.ReadResponse(ctx)
+	return c.ReadResponse(ctx, *request.ID)
 }
 
-func (c *LSPClient) ReadResponse(ctx context.Context) (*JSONRPCResponse, error) {
-	var contentLength int
+func (c *LSPClient) SendNotification(method string, params any) error {
+	request := JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  method,
+		Params:  params,
+	}
 
+	c.logger.Debug("Sending LSP notification", "method", method)
+
+	requestBytes, err := json.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("failed to marshal notification: %w", err)
+	}
+
+	content := string(requestBytes)
+	header := fmt.Sprintf("Content-Length: %d\r\n\r\n", len(content))
+
+	if _, err := c.stdin.Write([]byte(header + content)); err != nil {
+		return fmt.Errorf("failed to write notification: %w", err)
+	}
+
+	return nil
+}
+
+func (c *LSPClient) ReadResponse(ctx context.Context, expectedID int) (*JSONRPCResponse, error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -118,43 +141,63 @@ func (c *LSPClient) ReadResponse(ctx context.Context) (*JSONRPCResponse, error) 
 		default:
 		}
 
-		line, err := c.reader.ReadString('\n')
-		if err != nil {
-			return nil, fmt.Errorf("failed to read header line: %w", err)
-		}
-
-		line = strings.TrimSpace(line)
-		if line == "" {
-			break
-		}
-
-		if s, ok := strings.CutPrefix(line, "Content-Length:") ; ok {
-			lengthStr := strings.TrimSpace(s)
-			contentLength, err = strconv.Atoi(lengthStr)
+		// Read one message
+		var contentLength int
+		for {
+			line, err := c.reader.ReadString('\n')
 			if err != nil {
-				return nil, fmt.Errorf("invalid Content-Length header: %w", err)
+				return nil, fmt.Errorf("failed to read header line: %w", err)
+			}
+
+			line = strings.TrimSpace(line)
+			if line == "" {
+				break
+			}
+
+			if s, ok := strings.CutPrefix(line, "Content-Length:"); ok {
+				lengthStr := strings.TrimSpace(s)
+				contentLength, err = strconv.Atoi(lengthStr)
+				if err != nil {
+					return nil, fmt.Errorf("invalid Content-Length header: %w", err)
+				}
 			}
 		}
+
+		if contentLength == 0 {
+			return nil, errors.New("no Content-Length header found")
+		}
+
+		content := make([]byte, contentLength)
+		_, err := io.ReadFull(c.reader, content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response content: %w", err)
+		}
+
+		var response JSONRPCResponse
+		if err := json.Unmarshal(content, &response); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+
+		c.logger.Debug("Received LSP message", "id", response.ID, "hasResult", response.Result != nil, "hasError", response.Error != nil, "expectedID", expectedID)
+
+		// Check if this is a notification (ID = 0 and has Method field)
+		var notification struct {
+			Method string `json:"method"`
+		}
+		json.Unmarshal(content, &notification)
+
+		if notification.Method != "" {
+			c.logger.Debug("Received LSP notification", "method", notification.Method)
+			continue // Skip notifications and keep reading
+		}
+
+		// Check if this is the response we're waiting for
+		if response.ID == expectedID {
+			return &response, nil
+		}
+
+		c.logger.Debug("Received unexpected response ID, continuing to read", "received", response.ID, "expected", expectedID)
 	}
-
-	if contentLength == 0 {
-		return nil, errors.New("no Content-Length header found")
-	}
-
-	content := make([]byte, contentLength)
-	_, err := io.ReadFull(c.reader, content)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response content: %w", err)
-	}
-
-	var response JSONRPCResponse
-	if err := json.Unmarshal(content, &response); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	c.logger.Debug("Received LSP response", "id", response.ID)
-
-	return &response, nil
 }
 
 func (c *LSPClient) Initialize(ctx context.Context, rootURI string) error {
@@ -189,8 +232,8 @@ func (c *LSPClient) Initialize(ctx context.Context, rootURI string) error {
 		return fmt.Errorf("LSP initialize error [%d]: %s", response.Error.Code, response.Error.Message)
 	}
 
-	_, err = c.SendRequest(ctx, "initialized", map[string]any{})
-	if err != nil {
+	// Send initialized notification (no response expected)
+	if err := c.SendNotification("initialized", map[string]any{}); err != nil {
 		return fmt.Errorf("failed to send initialized notification: %w", err)
 	}
 	return nil
@@ -201,7 +244,7 @@ func (c *LSPClient) Close() error {
 	defer cancel()
 
 	c.SendRequest(ctx, "shutdown", nil)
-	c.SendRequest(ctx, "exit", nil)
+	c.SendNotification("exit", nil)
 
 	if err := c.stdin.Close(); err != nil {
 		c.logger.Warn("Failed to close stdin", "error", err)
