@@ -32,75 +32,258 @@ clsp -server <command> -method <method> [options]
 - `-verbose`: Enable verbose logging to stderr
 - `-list-methods`: List common LSP methods and exit
 
-### Examples
+### LSP Methods Examples with gopls
 
-#### Go Language Server (gopls)
+All examples use `gopls` as the LSP server. Replace file paths with your actual Go files.
 
+#### Text Document Information
+
+**Get hover information:**
 ```bash
-# Get hover information
 ./clsp -server gopls -method textDocument/hover \
   -params '{"textDocument":{"uri":"file:///path/to/file.go"},"position":{"line":10,"character":5}}'
+```
 
-# Get completions with JSON output
+**Get signature help:**
+```bash
+./clsp -server gopls -method textDocument/signatureHelp \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"position":{"line":20,"character":15}}'
+```
+
+#### Code Completion
+
+**Get code completions:**
+```bash
 ./clsp -server gopls -method textDocument/completion \
-  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"position":{"line":5,"character":10}}' \
-  -format json
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"position":{"line":5,"character":10},"context":{"triggerKind":1}}'
+```
 
-# Search workspace symbols (quiet output)
+#### Navigation
+
+**Go to definition:**
+```bash
+./clsp -server gopls -method textDocument/definition \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"position":{"line":15,"character":8}}'
+```
+
+**Go to type definition:**
+```bash
+./clsp -server gopls -method textDocument/typeDefinition \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"position":{"line":15,"character":8}}'
+```
+
+**Find implementations:**
+```bash
+./clsp -server gopls -method textDocument/implementation \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"position":{"line":15,"character":8}}'
+```
+
+**Find all references:**
+```bash
+./clsp -server gopls -method textDocument/references \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"position":{"line":15,"character":8},"context":{"includeDeclaration":true}}'
+```
+
+#### Document Structure
+
+**Get document symbols:**
+```bash
+./clsp -server gopls -method textDocument/documentSymbol \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"}}'
+```
+
+**Highlight symbol occurrences:**
+```bash
+./clsp -server gopls -method textDocument/documentHighlight \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"position":{"line":15,"character":8}}'
+```
+
+#### Code Formatting
+
+**Format entire document:**
+```bash
+./clsp -server gopls -method textDocument/formatting \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"options":{"tabSize":4,"insertSpaces":false}}'
+```
+
+**Format specific range:**
+```bash
+./clsp -server gopls -method textDocument/rangeFormatting \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"range":{"start":{"line":10,"character":0},"end":{"line":20,"character":0}},"options":{"tabSize":4,"insertSpaces":false}}'
+```
+
+#### Code Actions and Refactoring
+
+**Get available code actions:**
+```bash
+./clsp -server gopls -method textDocument/codeAction \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"range":{"start":{"line":10,"character":0},"end":{"line":10,"character":50}},"context":{"diagnostics":[]}}'
+```
+
+**Rename symbol:**
+```bash
+./clsp -server gopls -method textDocument/rename \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"position":{"line":15,"character":8},"newName":"NewFunctionName"}'
+```
+
+**Check if symbol can be renamed:**
+```bash
+./clsp -server gopls -method textDocument/prepareRename \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"position":{"line":15,"character":8}}'
+```
+
+#### Enhanced Features
+
+**Get code lenses:**
+```bash
+./clsp -server gopls -method textDocument/codeLens \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"}}'
+```
+
+**Get inlay hints:**
+```bash
+./clsp -server gopls -method textDocument/inlayHint \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"range":{"start":{"line":10,"character":0},"end":{"line":30,"character":0}}}'
+```
+
+#### Workspace Operations
+
+**Search workspace symbols:**
+```bash
+./clsp -server gopls -method workspace/symbol \
+  -params '{"query":"main"}'
+```
+
+**Execute workspace command:**
+```bash
+./clsp -server gopls -method workspace/executeCommand \
+  -params '{"command":"gopls.tidy","arguments":[]}'
+```
+
+#### gopls-Specific Methods
+
+**Get gopls debug info:**
+```bash
+./clsp -server gopls -method gopls/debug/info -params '{}'
+```
+
+**Get GC details:**
+```bash
+./clsp -server gopls -method gopls/gc_details \
+  -params '{"uri":"file:///path/to/file.go"}'
+```
+
+**Run go generate:**
+```bash
+./clsp -server gopls -method gopls/generate \
+  -params '{"uri":"file:///path/to/directory","recursive":false}'
+```
+
+**List available imports:**
+```bash
+./clsp -server gopls -method gopls/list_imports \
+  -params '{"uri":"file:///path/to/file.go"}'
+```
+
+**Add import:**
+```bash
+./clsp -server gopls -method gopls/add_import \
+  -params '{"uri":"file:///path/to/file.go","importPath":"fmt"}'
+```
+
+#### Output Format Examples
+
+**JSON output:**
+```bash
+./clsp -server gopls -method workspace/symbol \
+  -params '{"query":"main"}' -format json
+```
+
+**Raw output (result only):**
+```bash
+./clsp -server gopls -method workspace/symbol \
+  -params '{"query":"main"}' -format raw
+```
+
+**Quiet mode:**
+```bash
 ./clsp -server gopls -method workspace/symbol \
   -params '{"query":"main"}' -quiet
+```
 
-# Use parameters from file
+#### Using Parameter Files
+
+**Create and use parameter file:**
+```bash
+# Create parameter file
 echo '{"textDocument":{"uri":"file:///path/to/file.go"},"position":{"line":10,"character":5}}' > hover.json
+
+# Use parameter file
 ./clsp -server gopls -method textDocument/hover -params-file hover.json
 ```
 
-#### C/C++ Language Server (clangd)
+#### Advanced Options
 
+**Custom timeout:**
 ```bash
-# Get hover information with verbose logging
-./clsp -server clangd -method textDocument/hover \
-  -params '{"textDocument":{"uri":"file:///path/to/file.c"},"position":{"line":10,"character":5}}' \
-  -verbose
-
-# Get completions with timeout
-./clsp -server clangd -method textDocument/completion \
-  -params '{"textDocument":{"uri":"file:///path/to/file.c"},"position":{"line":5,"character":10}}' \
-  -timeout 10s
+./clsp -server gopls -method workspace/symbol \
+  -params '{"query":".*"}' -timeout 60s
 ```
 
-#### Python Language Server (pylsp)
-
+**Verbose logging:**
 ```bash
-# Get completions (raw output format)
-./clsp -server pylsp -method textDocument/completion \
-  -params '{"textDocument":{"uri":"file:///path/to/file.py"},"position":{"line":5,"character":10}}' \
-  -format raw
-
-# List available methods
-./clsp -list-methods
+./clsp -server gopls -method workspace/symbol \
+  -params '{"query":"main"}' -verbose
 ```
 
-## Common LSP Methods
+**Skip initialization:**
+```bash
+./clsp -server gopls -method textDocument/hover \
+  -params '{"textDocument":{"uri":"file:///path/to/file.go"},"position":{"line":10,"character":5}}' \
+  -skip-init
+```
+
+**Custom workspace root:**
+```bash
+./clsp -server gopls -method workspace/symbol \
+  -params '{"query":"main"}' -root "file:///path/to/project"
+```
+
+## Complete LSP Methods Reference
 
 **Text Document Methods:**
 - `textDocument/hover` - Get hover information at a position
 - `textDocument/completion` - Get code completions at a position
+- `textDocument/signatureHelp` - Get signature help for function calls
 - `textDocument/definition` - Go to definition
-- `textDocument/references` - Find references
+- `textDocument/typeDefinition` - Go to type definition
+- `textDocument/implementation` - Find implementations
+- `textDocument/references` - Find all references
 - `textDocument/documentSymbol` - Get document symbols
-- `textDocument/formatting` - Format document
+- `textDocument/documentHighlight` - Highlight symbol occurrences
+- `textDocument/formatting` - Format entire document
+- `textDocument/rangeFormatting` - Format specific range
 - `textDocument/codeAction` - Get available code actions
+- `textDocument/codeLens` - Get code lenses
 - `textDocument/rename` - Rename symbol
+- `textDocument/prepareRename` - Check if symbol can be renamed
+- `textDocument/inlayHint` - Get inlay hints
 
 **Workspace Methods:**
 - `workspace/symbol` - Search workspace symbols
 - `workspace/executeCommand` - Execute workspace commands
+- `workspace/didChangeConfiguration` - Notify configuration changes
+- `workspace/didChangeWatchedFiles` - Notify file system changes
 
-**Diagnostic Methods:**
-- `textDocument/publishDiagnostics` - Receive diagnostics (notification)
+**gopls-Specific Methods:**
+- `gopls/debug/info` - Get gopls debug information
+- `gopls/gc_details` - Get garbage collection details
+- `gopls/generate` - Run go generate
+- `gopls/list_imports` - List available imports
+- `gopls/add_import` - Add import to file
+- `gopls/remove_dependency` - Remove unused dependency
 
-Use `./clsp -list-methods` to see the full list with descriptions.
+Use `./clsp -list-methods` to see the built-in method list with descriptions.
 
 ## Implementation Details
 
